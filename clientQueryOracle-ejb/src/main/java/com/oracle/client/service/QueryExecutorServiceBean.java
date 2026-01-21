@@ -15,6 +15,7 @@ import javax.ejb.TransactionManagementType;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.sql.DataSource;
+import javax.transaction.UserTransaction;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -24,7 +25,8 @@ import java.util.logging.Logger;
 
 /**
  * Stateful EJB for executing Oracle queries with manual transaction management.
- * Uses Bean Managed Transactions (BMT) to allow explicit commit/rollback control.
+ * Uses Bean Managed Transactions (BMT) with UserTransaction to allow explicit commit/rollback control
+ * across multiple method invocations.
  */
 @Stateful
 @TransactionManagement(TransactionManagementType.BEAN)
@@ -39,6 +41,8 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     private String currentAlias;
     private int lastAffectedRows;
     private String sessionId;
+    private UserTransaction userTransaction;
+    private boolean transactionActive = false;
 
     @PostConstruct
     public void init() {
@@ -102,14 +106,22 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
             // If alias changed or no connection, establish new connection
             if (connection == null || currentAlias == null || !currentAlias.equals(aliasToUse)) {
+                // Close existing transaction and connection if changing database
+                if (transactionActive) {
+                    LOGGER.warning("Changing database alias - rolling back existing transaction");
+                    rollbackUserTransaction();
+                }
                 closeConnection();
                 connection = getConnection(dbAlias);
                 currentAlias = aliasToUse;
             }
 
-            // Set auto-commit to false to manage transactions manually
-            if (connection.getAutoCommit()) {
-                connection.setAutoCommit(false);
+            // Begin UserTransaction if not already active
+            if (!transactionActive) {
+                userTransaction = sessionContext.getUserTransaction();
+                userTransaction.begin();
+                transactionActive = true;
+                LOGGER.info("UserTransaction started for session: " + sessionId);
             }
 
             // Execute query
@@ -141,12 +153,20 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "SQL error executing query", e);
+            // Rollback on SQL error
+            if (transactionActive) {
+                rollbackUserTransaction();
+            }
             return QueryResponse.error(
                 "SQL Error: " + e.getMessage(),
                 "SQLState: " + e.getSQLState() + ", ErrorCode: " + e.getErrorCode()
             );
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Unexpected error executing query", e);
+            // Rollback on any error
+            if (transactionActive) {
+                rollbackUserTransaction();
+            }
             return QueryResponse.error(
                 "Error executing query: " + e.getMessage(),
                 e.getClass().getName()
@@ -156,60 +176,58 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
     @Override
     public QueryResponse commitTransaction() {
-        if (connection == null) {
-            return QueryResponse.error("No active connection to commit", null);
+        if (!transactionActive) {
+            return QueryResponse.error("No active transaction to commit", null);
         }
 
         try {
-            connection.commit();
-            LOGGER.info("Transaction committed successfully. Rows affected: " + lastAffectedRows);
+            userTransaction.commit();
+            transactionActive = false;
+            LOGGER.info("UserTransaction committed successfully. Rows affected: " + lastAffectedRows);
 
             return QueryResponse.success(
                 lastAffectedRows,
                 "Transaction committed successfully. " + lastAffectedRows + " row(s) affected."
             );
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error committing transaction", e);
+            // Try to rollback after failed commit
+            rollbackUserTransaction();
             return QueryResponse.error(
                 "Error committing transaction: " + e.getMessage(),
-                "SQLState: " + e.getSQLState()
+                e.getClass().getName()
             );
         }
     }
 
     @Override
     public QueryResponse rollbackTransaction() {
-        if (connection == null) {
-            return QueryResponse.error("No active connection to rollback", null);
+        if (!transactionActive) {
+            return QueryResponse.error("No active transaction to rollback", null);
         }
 
         try {
-            connection.rollback();
-            LOGGER.info("Transaction rolled back successfully");
+            rollbackUserTransaction();
+            LOGGER.info("UserTransaction rolled back successfully");
 
             return QueryResponse.success(
                 0,
                 "Transaction rolled back successfully. Changes have been discarded."
             );
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error rolling back transaction", e);
             return QueryResponse.error(
                 "Error rolling back transaction: " + e.getMessage(),
-                "SQLState: " + e.getSQLState()
+                e.getClass().getName()
             );
         }
     }
 
     @Override
     public boolean hasActiveTransaction() {
-        try {
-            return connection != null && !connection.isClosed() && !connection.getAutoCommit();
-        } catch (SQLException e) {
-            LOGGER.log(Level.WARNING, "Error checking transaction status", e);
-            return false;
-        }
+        return transactionActive;
     }
 
     @Override
@@ -233,15 +251,26 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     }
 
     /**
+     * Rollback UserTransaction internally.
+     */
+    private void rollbackUserTransaction() {
+        try {
+            if (userTransaction != null && transactionActive) {
+                userTransaction.rollback();
+                transactionActive = false;
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Error rolling back UserTransaction", e);
+            transactionActive = false;
+        }
+    }
+
+    /**
      * Close the current connection.
      */
     private void closeConnection() {
         if (connection != null) {
             try {
-                if (!connection.getAutoCommit()) {
-                    LOGGER.warning("Closing connection with pending transaction - rolling back");
-                    connection.rollback();
-                }
                 connection.close();
                 LOGGER.info("Connection closed");
             } catch (SQLException e) {
@@ -255,6 +284,13 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     @PreDestroy
     public void cleanup() {
         LOGGER.info("QueryExecutorService cleanup - session ID: " + sessionId);
+
+        // Rollback any active transaction before cleanup
+        if (transactionActive) {
+            LOGGER.warning("Cleaning up with active transaction - rolling back");
+            rollbackUserTransaction();
+        }
+
         closeConnection();
     }
 }
