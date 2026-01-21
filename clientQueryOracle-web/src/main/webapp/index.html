@@ -16,17 +16,18 @@
         <main>
             <!-- Database Selection -->
             <section class="card">
-                <h2>Database Selection</h2>
+                <h2>Database Selection <span style="font-size: 0.8em; color: #666;">(Optional)</span></h2>
                 <div class="form-group">
                     <label for="aliasSelect">Database Alias:</label>
                     <select id="aliasSelect" class="form-control">
-                        <option value="">-- Select Database --</option>
-                        <option value="entr_asp">entr_asp (Enterprise ASP)</option>
-                        <option value="sesamo">sesamo (Sesamo)</option>
-                        <option value="production">production (Production)</option>
-                        <option value="development">development (Development)</option>
-                        <option value="test">test (Test)</option>
+                        <option value="">-- Auto-detect from query --</option>
+                        <option value="entr_asp">entr_asp (jdbc/nsd_entr)</option>
+                        <option value="sesamo">sesamo (jdbc/ds_sesamo)</option>
                     </select>
+                    <p style="margin-top: 8px; font-size: 0.9em; color: #666;">
+                        💡 <strong>Tip:</strong> You can leave this empty and use schema-qualified table names
+                        (e.g., <code>sesamo.uffici</code>) in your query. The database will be detected automatically.
+                    </p>
                 </div>
             </section>
 
@@ -36,7 +37,7 @@
                 <div class="form-group">
                     <label for="queryInput">Enter your SQL query (INSERT, UPDATE, DELETE):</label>
                     <textarea id="queryInput" class="form-control" rows="8"
-                        placeholder="Example:&#10;UPDATE employees SET salary = salary * 1.1 WHERE department = 'IT';&#10;&#10;INSERT INTO audit_log (action, timestamp) VALUES ('User login', SYSDATE);&#10;&#10;DELETE FROM temp_data WHERE created_date < SYSDATE - 30;"></textarea>
+                        placeholder="Examples with auto-detection:&#10;UPDATE sesamo.uffici SET data_fine = SYSDATE WHERE id_ufficio = 111;&#10;&#10;INSERT INTO entr_asp.audit_log (action, timestamp) VALUES ('Login', SYSDATE);&#10;&#10;DELETE FROM sesamo.temp_data WHERE created_date < SYSDATE - 30;&#10;&#10;💡 Use schema.table format (e.g., sesamo.uffici) for automatic database detection!"></textarea>
                 </div>
                 <div class="button-group">
                     <button id="executeBtn" class="btn btn-primary" onclick="executeQuery()">

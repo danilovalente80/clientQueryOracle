@@ -18,7 +18,7 @@ function loadAliases() {
             if (data.success && data.aliases) {
                 const select = document.getElementById('aliasSelect');
                 // Keep the first option, clear the rest
-                select.innerHTML = '<option value="">-- Select Database --</option>';
+                select.innerHTML = '<option value="">-- Auto-detect from query --</option>';
 
                 data.aliases.forEach(alias => {
                     const option = document.createElement('option');
@@ -63,15 +63,12 @@ function executeQuery() {
     const query = document.getElementById('queryInput').value.trim();
 
     // Validate input
-    if (!alias) {
-        alert('Please select a database alias');
-        return;
-    }
-
     if (!query) {
         alert('Please enter a SQL query');
         return;
     }
+
+    // Note: alias is optional - it will be extracted from query if not provided
 
     // Disable buttons and show loading
     setLoadingState(true);

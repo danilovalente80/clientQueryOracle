@@ -9,27 +9,12 @@ public enum DatabaseAlias {
     /**
      * Enterprise ASP database
      */
-    ENTR_ASP("entr_asp", "jdbc/EntrAspDS"),
+    ENTR_ASP("entr_asp", "jdbc/nsd_entr"),
 
     /**
      * Sesamo database
      */
-    SESAMO("sesamo", "jdbc/SesamoDS"),
-
-    /**
-     * Default/Production database
-     */
-    PRODUCTION("production", "jdbc/ProductionDS"),
-
-    /**
-     * Development database
-     */
-    DEVELOPMENT("development", "jdbc/DevelopmentDS"),
-
-    /**
-     * Test database
-     */
-    TEST("test", "jdbc/TestDS");
+    SESAMO("sesamo", "jdbc/ds_sesamo");
 
     private final String alias;
     private final String jndiName;

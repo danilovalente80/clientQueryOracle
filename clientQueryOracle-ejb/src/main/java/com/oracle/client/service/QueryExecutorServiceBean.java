@@ -3,6 +3,7 @@ package com.oracle.client.service;
 import com.oracle.client.config.DatabaseAlias;
 import com.oracle.client.model.QueryRequest;
 import com.oracle.client.model.QueryResponse;
+import com.oracle.client.util.QueryParser;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -53,10 +54,6 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
                 return QueryResponse.error("Query cannot be null or empty", null);
             }
 
-            if (request.getAlias() == null || request.getAlias().trim().isEmpty()) {
-                return QueryResponse.error("Database alias cannot be null or empty", null);
-            }
-
             String query = request.getQuery().trim();
 
             // Validate query type (only DML allowed: INSERT, UPDATE, DELETE)
@@ -70,19 +67,44 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
                 );
             }
 
+            // Determine database alias: use provided alias or extract from query
+            String aliasToUse = null;
+
+            // First, check if alias was explicitly provided
+            if (request.getAlias() != null && !request.getAlias().trim().isEmpty()) {
+                aliasToUse = request.getAlias().trim();
+                LOGGER.info("Using provided alias: " + aliasToUse);
+            } else {
+                // Try to extract alias from query (e.g., from "UPDATE sesamo.uffici SET...")
+                String extractedAlias = QueryParser.extractAlias(query);
+                if (extractedAlias != null) {
+                    aliasToUse = extractedAlias;
+                    LOGGER.info("Extracted alias from query: " + aliasToUse + " - " +
+                        QueryParser.getAliasDetectionInfo(query));
+                } else {
+                    return QueryResponse.error(
+                        "Cannot determine database alias",
+                        "Please either:\n" +
+                        "1. Select a database from the dropdown, OR\n" +
+                        "2. Use schema-qualified table names in your query (e.g., sesamo.uffici)\n\n" +
+                        "Available aliases: " + DatabaseAlias.getAvailableAliases()
+                    );
+                }
+            }
+
             // Get database alias and JNDI name
             DatabaseAlias dbAlias;
             try {
-                dbAlias = DatabaseAlias.fromAlias(request.getAlias());
+                dbAlias = DatabaseAlias.fromAlias(aliasToUse);
             } catch (IllegalArgumentException e) {
-                return QueryResponse.error("Invalid database alias: " + request.getAlias(), e.getMessage());
+                return QueryResponse.error("Invalid database alias: " + aliasToUse, e.getMessage());
             }
 
             // If alias changed or no connection, establish new connection
-            if (connection == null || currentAlias == null || !currentAlias.equals(request.getAlias())) {
+            if (connection == null || currentAlias == null || !currentAlias.equals(aliasToUse)) {
                 closeConnection();
                 connection = getConnection(dbAlias);
-                currentAlias = request.getAlias();
+                currentAlias = aliasToUse;
             }
 
             // Set auto-commit to false to manage transactions manually
