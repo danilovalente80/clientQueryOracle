@@ -5,9 +5,9 @@
              http://java.sun.com/xml/ns/javaee/application_6.xsd"
              version="6">
 
-    <application-name>clientQueryOracle</application-name>
-    <display-name>Oracle Query Client Application</display-name>
     <description>Java EE application for executing Oracle queries with transaction management</description>
+    <display-name>Oracle Query Client Application</display-name>
+    <application-name>clientQueryOracle</application-name>
 
     <module>
         <ejb>clientQueryOracle-ejb-1.0.0.jar</ejb>

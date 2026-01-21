@@ -5,8 +5,8 @@
          http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
          version="3.0">
 
-    <display-name>Oracle Query Client Web</display-name>
     <description>Web interface for Oracle Query Client</description>
+    <display-name>Oracle Query Client Web</display-name>
 
     <!-- Welcome file list -->
     <welcome-file-list>

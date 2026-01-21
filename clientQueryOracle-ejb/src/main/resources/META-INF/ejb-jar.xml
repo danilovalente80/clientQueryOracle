@@ -5,8 +5,8 @@
          http://java.sun.com/xml/ns/javaee/ejb-jar_3_1.xsd"
          version="3.1">
 
-    <display-name>Oracle Query Client EJB</display-name>
     <description>EJB module for Oracle Query Client</description>
+    <display-name>Oracle Query Client EJB</display-name>
 
     <enterprise-beans>
         <session>
