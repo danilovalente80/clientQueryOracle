@@ -11,6 +11,8 @@ public class QueryRequest implements Serializable {
 
     private String query;
     private String alias;
+    private String username;  // For logging
+    private String ipAddress; // For logging
 
     public QueryRequest() {
     }
@@ -34,6 +36,22 @@ public class QueryRequest implements Serializable {
 
     public void setAlias(String alias) {
         this.alias = alias;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
     }
 
     @Override

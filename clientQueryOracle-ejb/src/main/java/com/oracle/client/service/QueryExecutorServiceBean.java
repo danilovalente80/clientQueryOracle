@@ -8,6 +8,7 @@ import com.oracle.client.util.QueryParser;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
+import javax.ejb.EJB;
 import javax.ejb.SessionContext;
 import javax.ejb.Stateful;
 import javax.ejb.TransactionManagement;
@@ -37,12 +38,19 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     @Resource
     private SessionContext sessionContext;
 
+    @EJB
+    private QueryLogService queryLogService;
+
     private Connection connection;
     private String currentAlias;
     private int lastAffectedRows;
     private String sessionId;
     private UserTransaction userTransaction;
     private boolean transactionActive = false;
+
+    // For logging
+    private String currentUsername;
+    private String lastQuery;
 
     @PostConstruct
     public void init() {
@@ -124,6 +132,11 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
                 LOGGER.info("UserTransaction started for session: " + sessionId);
             }
 
+            // Store for logging
+            currentUsername = request.getUsername();
+            lastQuery = query;
+            long startTime = System.currentTimeMillis();
+
             // Execute query
             PreparedStatement statement = null;
             try {
@@ -132,8 +145,15 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
                 statement = connection.prepareStatement(query);
                 lastAffectedRows = statement.executeUpdate();
+                long duration = System.currentTimeMillis() - startTime;
 
                 LOGGER.info("Query executed successfully. Affected rows: " + lastAffectedRows);
+
+                // Log successful query execution
+                if (queryLogService != null && currentUsername != null) {
+                    queryLogService.logQuerySuccess(currentUsername, aliasToUse, query,
+                        lastAffectedRows, duration, sessionId, request.getIpAddress());
+                }
 
                 return QueryResponse.success(
                     lastAffectedRows,
@@ -153,6 +173,15 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "SQL error executing query", e);
+
+            // Log error
+            if (queryLogService != null && request.getUsername() != null) {
+                queryLogService.logQueryError(request.getUsername(), currentAlias,
+                    request.getQuery(), e.getMessage(),
+                    "SQLState:" + e.getSQLState() + " Code:" + e.getErrorCode(),
+                    0, sessionId, request.getIpAddress());
+            }
+
             // Rollback on SQL error
             if (transactionActive) {
                 rollbackUserTransaction();
@@ -163,6 +192,14 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             );
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Unexpected error executing query", e);
+
+            // Log error
+            if (queryLogService != null && request.getUsername() != null) {
+                queryLogService.logQueryError(request.getUsername(), currentAlias,
+                    request.getQuery(), e.getMessage(), e.getClass().getName(),
+                    0, sessionId, request.getIpAddress());
+            }
+
             // Rollback on any error
             if (transactionActive) {
                 rollbackUserTransaction();
@@ -184,6 +221,11 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             userTransaction.commit();
             transactionActive = false;
             LOGGER.info("UserTransaction committed successfully. Rows affected: " + lastAffectedRows);
+
+            // Log commit
+            if (queryLogService != null && currentUsername != null) {
+                queryLogService.logCommit(currentUsername, currentAlias, lastAffectedRows, sessionId);
+            }
 
             return QueryResponse.success(
                 lastAffectedRows,
@@ -210,6 +252,11 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
         try {
             rollbackUserTransaction();
             LOGGER.info("UserTransaction rolled back successfully");
+
+            // Log rollback
+            if (queryLogService != null && currentUsername != null) {
+                queryLogService.logRollback(currentUsername, currentAlias, sessionId);
+            }
 
             return QueryResponse.success(
                 0,
