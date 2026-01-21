@@ -128,76 +128,86 @@ function executeQuery() {
  * Commit transaction
  */
 function commitTransaction() {
-    if (!confirm('Are you sure you want to commit these changes? This action cannot be undone.')) {
-        return;
-    }
+    showConfirmModal(
+        'Confirm Commit',
+        'Are you sure you want to commit these changes? This action cannot be undone.',
+        'Commit',
+        'success',
+        function() {
+            setLoadingState(true);
 
-    setLoadingState(true);
+            fetch('api/query/commit', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.status === 401) {
+                    showAlert('Session expired. Please login again.', 'error');
+                    setTimeout(() => window.location.href = 'login.html', 2000);
+                    return null;
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data) {
+                    setLoadingState(false);
+                    displayResults(data);
 
-    fetch('api/query/commit', {
-        method: 'POST'
-    })
-    .then(response => {
-        if (response.status === 401) {
-            alert('Session expired. Please login again.');
-            window.location.href = 'login.html';
-            return null;
+                    if (data.success) {
+                        hasActiveTransaction = false;
+                        updateTransactionUI();
+                        showAlert('Transaction committed successfully!', 'success');
+                    }
+                }
+            })
+            .catch(error => {
+                setLoadingState(false);
+                displayError('Network error: ' + error.message);
+            });
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data) {
-            setLoadingState(false);
-            displayResults(data);
-
-            if (data.success) {
-                hasActiveTransaction = false;
-                updateTransactionUI();
-            }
-        }
-    })
-    .catch(error => {
-        setLoadingState(false);
-        displayError('Network error: ' + error.message);
-    });
+    );
 }
 
 /**
  * Rollback transaction
  */
 function rollbackTransaction() {
-    if (!confirm('Are you sure you want to rollback? All changes will be discarded.')) {
-        return;
-    }
+    showConfirmModal(
+        'Confirm Rollback',
+        'Are you sure you want to rollback? All changes will be discarded.',
+        'Rollback',
+        'danger',
+        function() {
+            setLoadingState(true);
 
-    setLoadingState(true);
+            fetch('api/query/rollback', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.status === 401) {
+                    showAlert('Session expired. Please login again.', 'error');
+                    setTimeout(() => window.location.href = 'login.html', 2000);
+                    return null;
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data) {
+                    setLoadingState(false);
+                    displayResults(data);
 
-    fetch('api/query/rollback', {
-        method: 'POST'
-    })
-    .then(response => {
-        if (response.status === 401) {
-            alert('Session expired. Please login again.');
-            window.location.href = 'login.html';
-            return null;
+                    if (data.success) {
+                        hasActiveTransaction = false;
+                        updateTransactionUI();
+                        showAlert('Transaction rolled back successfully!', 'info');
+                    }
+                }
+            })
+            .catch(error => {
+                setLoadingState(false);
+                displayError('Network error: ' + error.message);
+            });
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data) {
-            setLoadingState(false);
-            displayResults(data);
-
-            if (data.success) {
-                hasActiveTransaction = false;
-                updateTransactionUI();
-            }
-        }
-    })
-    .catch(error => {
-        setLoadingState(false);
-        displayError('Network error: ' + error.message);
-    });
+    );
 }
 
 /**
@@ -223,8 +233,13 @@ function displayResults(data) {
         statusText.className = 'status-badge error';
     }
 
-    // Update affected rows
-    affectedRows.textContent = data.affectedRows || 0;
+    // Update affected rows with detail if available
+    if (data.affectedRowsDetail) {
+        // Format: "1 - 2 - 1 TOTALE: 4"
+        affectedRows.textContent = data.affectedRowsDetail + ' TOTALE: ' + (data.affectedRows || 0);
+    } else {
+        affectedRows.textContent = data.affectedRows || 0;
+    }
 
     // Update message
     messageText.textContent = data.message || 'No message';
@@ -257,12 +272,12 @@ function displayError(message) {
  * Update transaction control UI
  */
 function updateTransactionUI() {
-    const transactionSection = document.getElementById('transactionSection');
+    const transactionButtons = document.getElementById('transactionButtons');
 
     if (hasActiveTransaction) {
-        transactionSection.style.display = 'block';
+        transactionButtons.style.display = 'flex';
     } else {
-        transactionSection.style.display = 'none';
+        transactionButtons.style.display = 'none';
     }
 }
 
@@ -336,11 +351,24 @@ async function checkAuthentication() {
  */
 async function logout() {
     if (hasActiveTransaction) {
-        if (!confirm('You have an active transaction that will be rolled back. Continue with logout?')) {
-            return;
-        }
+        showConfirmModal(
+            'Confirm Logout',
+            'You have an active transaction that will be rolled back. Continue with logout?',
+            'Logout',
+            'danger',
+            async function() {
+                await performLogout();
+            }
+        );
+    } else {
+        await performLogout();
     }
+}
 
+/**
+ * Perform the actual logout
+ */
+async function performLogout() {
     try {
         const response = await fetch('api/auth/logout', {
             method: 'POST'
@@ -349,14 +377,80 @@ async function logout() {
         const data = await response.json();
 
         if (data.success) {
-            // Redirect to login page
             window.location.href = 'login.html';
         } else {
-            alert('Logout failed: ' + data.message);
+            showAlert('Logout failed: ' + data.message, 'error');
         }
 
     } catch (error) {
         console.error('Logout error:', error);
-        alert('Error during logout');
+        showAlert('Error during logout', 'error');
     }
+}
+
+/**
+ * Show custom confirmation modal
+ */
+function showConfirmModal(title, message, confirmText, type, onConfirm) {
+    const modal = document.getElementById('confirmModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modalConfirmBtn.textContent = confirmText;
+
+    // Set button color based on type
+    modalConfirmBtn.className = 'modal-btn modal-btn-' + type;
+
+    // Show modal
+    modal.style.display = 'flex';
+
+    // Handle confirm
+    modalConfirmBtn.onclick = function() {
+        modal.style.display = 'none';
+        if (onConfirm) onConfirm();
+    };
+
+    // Handle cancel
+    modalCancelBtn.onclick = function() {
+        modal.style.display = 'none';
+    };
+
+    // Close on overlay click
+    modal.onclick = function(event) {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    };
+}
+
+/**
+ * Show alert notification
+ */
+function showAlert(message, type) {
+    const alert = document.getElementById('alertNotification');
+    const alertMessage = document.getElementById('alertMessage');
+    const alertIcon = document.getElementById('alertIcon');
+
+    alertMessage.textContent = message;
+    alert.className = 'alert-notification alert-' + type;
+
+    // Set icon based on type
+    if (type === 'success') {
+        alertIcon.textContent = '✓';
+    } else if (type === 'error') {
+        alertIcon.textContent = '✕';
+    } else if (type === 'info') {
+        alertIcon.textContent = 'ℹ';
+    }
+
+    alert.style.display = 'flex';
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        alert.style.display = 'none';
+    }, 3000);
 }

@@ -13,6 +13,7 @@ public class QueryResponse implements Serializable {
     private int affectedRows;
     private String message;
     private String errorDetails;
+    private String affectedRowsDetail;  // For multiple queries: "1 - 2 - 1"
 
     public QueryResponse() {
     }
@@ -63,6 +64,14 @@ public class QueryResponse implements Serializable {
 
     public void setErrorDetails(String errorDetails) {
         this.errorDetails = errorDetails;
+    }
+
+    public String getAffectedRowsDetail() {
+        return affectedRowsDetail;
+    }
+
+    public void setAffectedRowsDetail(String affectedRowsDetail) {
+        this.affectedRowsDetail = affectedRowsDetail;
     }
 
     @Override

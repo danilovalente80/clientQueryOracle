@@ -276,6 +276,10 @@ public class QueryServlet extends HttpServlet {
         json.append("\"affectedRows\":").append(response.getAffectedRows()).append(",");
         json.append("\"message\":\"").append(escapeJson(response.getMessage())).append("\"");
 
+        if (response.getAffectedRowsDetail() != null) {
+            json.append(",\"affectedRowsDetail\":\"").append(escapeJson(response.getAffectedRowsDetail())).append("\"");
+        }
+
         if (response.getErrorDetails() != null) {
             json.append(",\"errorDetails\":\"").append(escapeJson(response.getErrorDetails())).append("\"");
         }

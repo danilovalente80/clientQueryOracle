@@ -4,6 +4,7 @@ import com.oracle.client.config.DatabaseAlias;
 import com.oracle.client.model.QueryRequest;
 import com.oracle.client.model.QueryResponse;
 import com.oracle.client.util.QueryParser;
+import com.oracle.client.util.QuerySplitter;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -20,6 +21,8 @@ import javax.transaction.UserTransaction;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -137,39 +140,67 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             lastQuery = query;
             long startTime = System.currentTimeMillis();
 
-            // Execute query
-            PreparedStatement statement = null;
-            try {
-                LOGGER.info("Executing query on " + dbAlias.getAlias() + ": " +
-                    query.substring(0, Math.min(100, query.length())));
+            // Split queries (support multiple queries separated by semicolon)
+            List<String> queries = QuerySplitter.splitQueries(query);
+            LOGGER.info("Found " + queries.size() + " query(ies) to execute");
 
-                statement = connection.prepareStatement(query);
-                lastAffectedRows = statement.executeUpdate();
-                long duration = System.currentTimeMillis() - startTime;
+            List<Integer> affectedRowsList = new ArrayList<Integer>();
+            int totalAffectedRows = 0;
 
-                LOGGER.info("Query executed successfully. Affected rows: " + lastAffectedRows);
+            // Execute each query
+            for (int i = 0; i < queries.size(); i++) {
+                String singleQuery = queries.get(i);
+                PreparedStatement statement = null;
+                try {
+                    LOGGER.info("Executing query " + (i + 1) + "/" + queries.size() + " on " +
+                        dbAlias.getAlias() + ": " + singleQuery.substring(0, Math.min(100, singleQuery.length())));
 
-                // Log successful query execution
-                if (queryLogService != null && currentUsername != null) {
-                    queryLogService.logQuerySuccess(currentUsername, aliasToUse, query,
-                        lastAffectedRows, duration, sessionId, request.getIpAddress());
-                }
+                    statement = connection.prepareStatement(singleQuery);
+                    int affected = statement.executeUpdate();
+                    affectedRowsList.add(affected);
+                    totalAffectedRows += affected;
 
-                return QueryResponse.success(
-                    lastAffectedRows,
-                    "Query executed successfully. " + lastAffectedRows + " row(s) affected. " +
-                    "Transaction pending - please commit or rollback."
-                );
+                    LOGGER.info("Query " + (i + 1) + " executed successfully. Affected rows: " + affected);
 
-            } finally {
-                if (statement != null) {
-                    try {
-                        statement.close();
-                    } catch (SQLException e) {
-                        LOGGER.log(Level.WARNING, "Error closing statement", e);
+                } finally {
+                    if (statement != null) {
+                        try {
+                            statement.close();
+                        } catch (SQLException e) {
+                            LOGGER.log(Level.WARNING, "Error closing statement", e);
+                        }
                     }
                 }
             }
+
+            long duration = System.currentTimeMillis() - startTime;
+            lastAffectedRows = totalAffectedRows;
+
+            // Build affected rows detail string
+            StringBuilder detailBuilder = new StringBuilder();
+            for (int i = 0; i < affectedRowsList.size(); i++) {
+                detailBuilder.append(affectedRowsList.get(i));
+                if (i < affectedRowsList.size() - 1) {
+                    detailBuilder.append(" - ");
+                }
+            }
+            String affectedRowsDetail = detailBuilder.toString();
+
+            // Log successful query execution
+            if (queryLogService != null && currentUsername != null) {
+                queryLogService.logQuerySuccess(currentUsername, aliasToUse, query,
+                    totalAffectedRows, duration, sessionId, request.getIpAddress());
+            }
+
+            // Build response
+            QueryResponse response = QueryResponse.success(
+                totalAffectedRows,
+                "Query executed successfully. " + totalAffectedRows + " row(s) affected. " +
+                "Transaction pending - please commit or rollback."
+            );
+            response.setAffectedRowsDetail(affectedRowsDetail);
+
+            return response;
 
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "SQL error executing query", e);
