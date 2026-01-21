@@ -26,10 +26,12 @@
             <artifactId>clientQueryOracle-ejb</artifactId>
             <version>${project.version}</version>
             <type>ejb</type>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
     <build>
+        <finalName>clientQueryOracle-web-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

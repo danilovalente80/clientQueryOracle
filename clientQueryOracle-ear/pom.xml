@@ -39,15 +39,18 @@
                 <configuration>
                     <version>6</version>
                     <defaultLibBundleDir>lib</defaultLibBundleDir>
+                    <generateApplicationXml>true</generateApplicationXml>
                     <modules>
                         <ejbModule>
                             <groupId>com.oracle.client</groupId>
                             <artifactId>clientQueryOracle-ejb</artifactId>
+                            <bundleFileName>clientQueryOracle-ejb-1.0.0.jar</bundleFileName>
                         </ejbModule>
                         <webModule>
                             <groupId>com.oracle.client</groupId>
                             <artifactId>clientQueryOracle-web</artifactId>
                             <contextRoot>/queryOracle</contextRoot>
+                            <bundleFileName>clientQueryOracle-web-1.0.0.war</bundleFileName>
                         </webModule>
                     </modules>
                 </configuration>
