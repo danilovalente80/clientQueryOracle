@@ -3,6 +3,7 @@ package com.oracle.client.web;
 import com.oracle.client.config.DatabaseAlias;
 import com.oracle.client.model.QueryRequest;
 import com.oracle.client.model.QueryResponse;
+import com.oracle.client.model.User;
 import com.oracle.client.service.QueryExecutorService;
 
 import javax.ejb.EJB;
@@ -46,9 +47,9 @@ public class QueryServlet extends HttpServlet {
             if (pathInfo == null || pathInfo.equals("/") || pathInfo.equals("/execute")) {
                 handleExecuteQuery(request, response, out);
             } else if (pathInfo.equals("/commit")) {
-                handleCommit(response, out);
+                handleCommit(request, response, out);
             } else if (pathInfo.equals("/rollback")) {
-                handleRollback(response, out);
+                handleRollback(request, response, out);
             } else {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 out.write("{\"success\":false,\"message\":\"Endpoint not found\"}");
@@ -96,6 +97,14 @@ public class QueryServlet extends HttpServlet {
     private void handleExecuteQuery(HttpServletRequest request, HttpServletResponse response, PrintWriter out)
             throws IOException {
 
+        // Check authentication
+        User user = LoginServlet.getAuthenticatedUser(request);
+        if (user == null || !user.isValid()) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            out.write("{\"success\":false,\"message\":\"Not authenticated or session expired\"}");
+            return;
+        }
+
         // Ensure we have a stateful EJB for this session
         HttpSession session = request.getSession(true);
 
@@ -108,7 +117,7 @@ public class QueryServlet extends HttpServlet {
         }
 
         String requestBody = sb.toString();
-        LOGGER.info("Received query request: " + requestBody);
+        LOGGER.info("Received query request from user: " + user.getUsername());
 
         // Parse JSON manually (simple parsing for basic JSON)
         QueryRequest queryRequest = parseQueryRequest(requestBody);
@@ -118,6 +127,10 @@ public class QueryServlet extends HttpServlet {
             out.write("{\"success\":false,\"message\":\"Invalid request format\"}");
             return;
         }
+
+        // Add user info for logging
+        queryRequest.setUsername(user.getUsername());
+        queryRequest.setIpAddress(getClientIP(request));
 
         // Execute query
         QueryResponse queryResponse = queryExecutorService.executeQuery(queryRequest);
@@ -131,7 +144,15 @@ public class QueryServlet extends HttpServlet {
     /**
      * Handle commit request.
      */
-    private void handleCommit(HttpServletResponse response, PrintWriter out) {
+    private void handleCommit(HttpServletRequest request, HttpServletResponse response, PrintWriter out) {
+        // Check authentication
+        User user = LoginServlet.getAuthenticatedUser(request);
+        if (user == null || !user.isValid()) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            out.write("{\"success\":false,\"message\":\"Not authenticated or session expired\"}");
+            return;
+        }
+
         QueryResponse queryResponse = queryExecutorService.commitTransaction();
 
         response.setStatus(queryResponse.isSuccess() ?
@@ -142,7 +163,15 @@ public class QueryServlet extends HttpServlet {
     /**
      * Handle rollback request.
      */
-    private void handleRollback(HttpServletResponse response, PrintWriter out) {
+    private void handleRollback(HttpServletRequest request, HttpServletResponse response, PrintWriter out) {
+        // Check authentication
+        User user = LoginServlet.getAuthenticatedUser(request);
+        if (user == null || !user.isValid()) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            out.write("{\"success\":false,\"message\":\"Not authenticated or session expired\"}");
+            return;
+        }
+
         QueryResponse queryResponse = queryExecutorService.rollbackTransaction();
 
         response.setStatus(queryResponse.isSuccess() ?
@@ -277,5 +306,23 @@ public class QueryServlet extends HttpServlet {
                   .replace("\\r", "\r")
                   .replace("\\t", "\t")
                   .replace("\\\\", "\\");
+    }
+
+    /**
+     * Get client IP address from request.
+     */
+    private String getClientIP(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        // If multiple IPs, take the first one
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip;
     }
 }
