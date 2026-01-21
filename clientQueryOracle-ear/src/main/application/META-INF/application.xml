@@ -7,7 +7,6 @@
 
     <description>Java EE application for executing Oracle queries with transaction management</description>
     <display-name>Oracle Query Client Application</display-name>
-    <application-name>clientQueryOracle</application-name>
 
     <module>
         <ejb>clientQueryOracle-ejb-1.0.0.jar</ejb>
