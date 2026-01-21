@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ejb-jar xmlns="http://java.sun.com/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+         http://java.sun.com/xml/ns/javaee/ejb-jar_3_1.xsd"
+         version="3.1">
+
+    <display-name>Oracle Query Client EJB</display-name>
+    <description>EJB module for Oracle Query Client</description>
+
+    <enterprise-beans>
+        <session>
+            <ejb-name>QueryExecutorServiceBean</ejb-name>
+            <business-local>com.oracle.client.service.QueryExecutorService</business-local>
+            <ejb-class>com.oracle.client.service.QueryExecutorServiceBean</ejb-class>
+            <session-type>Stateful</session-type>
+            <transaction-type>Bean</transaction-type>
+        </session>
+    </enterprise-beans>
+
+</ejb-jar>

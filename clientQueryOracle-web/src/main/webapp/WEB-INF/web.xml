@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://java.sun.com/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+         http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+         version="3.0">
+
+    <display-name>Oracle Query Client Web</display-name>
+    <description>Web interface for Oracle Query Client</description>
+
+    <!-- Welcome file list -->
+    <welcome-file-list>
+        <welcome-file>index.html</welcome-file>
+    </welcome-file-list>
+
+    <!-- Session configuration -->
+    <session-config>
+        <session-timeout>30</session-timeout>
+        <cookie-config>
+            <http-only>true</http-only>
+        </cookie-config>
+    </session-config>
+
+    <!-- Security constraint for production (optional) -->
+    <!--
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Query Client</web-resource-name>
+            <url-pattern>/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>QueryUser</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <login-config>
+        <auth-method>FORM</auth-method>
+        <realm-name>QueryClientRealm</realm-name>
+        <form-login-config>
+            <form-login-page>/login.html</form-login-page>
+            <form-error-page>/loginError.html</form-error-page>
+        </form-login-config>
+    </login-config>
+
+    <security-role>
+        <role-name>QueryUser</role-name>
+    </security-role>
+    -->
+
+</web-app>
