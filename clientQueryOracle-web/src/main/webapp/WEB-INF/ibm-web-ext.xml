@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-ext xmlns="http://websphere.ibm.com/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://websphere.ibm.com/xml/ns/javaee
+         http://websphere.ibm.com/xml/ns/javaee/ibm-web-ext_1_0.xsd"
+         version="1.0">
+
+    <!-- Session management configuration -->
+    <reload-interval value="3"/>
+    <context-root uri="/queryOracle"/>
+
+    <!-- Enable file serving -->
+    <enable-file-serving value="true"/>
+    <enable-directory-browsing value="false"/>
+
+    <!-- Session cookie configuration to avoid SRVE8111E -->
+    <session-config>
+        <session-management>
+            <enable-cookies>true</enable-cookies>
+            <enable-url-rewriting>false</enable-url-rewriting>
+            <enable-protocol-switch-rewriting>false</enable-protocol-switch-rewriting>
+        </session-management>
+    </session-config>
+
+</web-ext>
