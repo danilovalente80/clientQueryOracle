@@ -64,6 +64,8 @@ public class QueryLogServiceBean implements QueryLogService {
 
     /**
      * Internal method to insert log record.
+     * Note: With @TransactionAttribute(REQUIRES_NEW), the container manages the transaction.
+     * No need to call commit() or rollback() manually - the container handles it automatically.
      */
     private void insertLog(String username, String databaseAlias, String queryText,
                           int affectedRows, String esito, String errorMessage,
@@ -101,21 +103,15 @@ public class QueryLogServiceBean implements QueryLogService {
                            ", rows=" + affectedRows);
             }
 
-            // Commit immediately (REQUIRES_NEW transaction)
-            conn.commit();
+            // Container automatically commits the transaction (REQUIRES_NEW)
 
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "SQL error inserting query log", e);
+            // Container automatically rolls back the transaction on exception
             // Don't rethrow - logging should not fail the main operation
-            try {
-                if (conn != null) {
-                    conn.rollback();
-                }
-            } catch (SQLException rollbackEx) {
-                LOGGER.log(Level.WARNING, "Error rolling back log transaction", rollbackEx);
-            }
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error inserting query log", e);
+            // Container automatically rolls back the transaction on exception
         } finally {
             closeResources(stmt, conn);
         }
@@ -123,13 +119,13 @@ public class QueryLogServiceBean implements QueryLogService {
 
     /**
      * Get connection to log database (SESAMO).
+     * Note: Don't set autoCommit - with JTA transactions, the connection
+     * is automatically enlisted in the current transaction managed by the container.
      */
     private Connection getLogConnection() throws Exception {
         Context ctx = new InitialContext();
         DataSource ds = (DataSource) ctx.lookup(LOG_DB_JNDI);
-        Connection conn = ds.getConnection();
-        conn.setAutoCommit(false);
-        return conn;
+        return ds.getConnection();
     }
 
     /**
