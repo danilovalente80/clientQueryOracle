@@ -1,9 +1,20 @@
 // Global state
 let hasActiveTransaction = false;
+let currentUser = null;
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('Oracle Query Client initialized');
+
+    // Check authentication first
+    const authenticated = await checkAuthentication();
+    if (!authenticated) {
+        // Redirect to login page
+        window.location.href = 'login.html';
+        return;
+    }
+
+    // Initialize application
     loadAliases();
     checkTransactionStatus();
 });
@@ -87,14 +98,24 @@ function executeQuery() {
         },
         body: JSON.stringify(requestData)
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 401) {
+            // Not authenticated - redirect to login
+            alert('Session expired. Please login again.');
+            window.location.href = 'login.html';
+            return null;
+        }
+        return response.json();
+    })
     .then(data => {
-        setLoadingState(false);
-        displayResults(data);
+        if (data) {
+            setLoadingState(false);
+            displayResults(data);
 
-        if (data.success) {
-            hasActiveTransaction = true;
-            updateTransactionUI();
+            if (data.success) {
+                hasActiveTransaction = true;
+                updateTransactionUI();
+            }
         }
     })
     .catch(error => {
@@ -116,14 +137,23 @@ function commitTransaction() {
     fetch('api/query/commit', {
         method: 'POST'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 401) {
+            alert('Session expired. Please login again.');
+            window.location.href = 'login.html';
+            return null;
+        }
+        return response.json();
+    })
     .then(data => {
-        setLoadingState(false);
-        displayResults(data);
+        if (data) {
+            setLoadingState(false);
+            displayResults(data);
 
-        if (data.success) {
-            hasActiveTransaction = false;
-            updateTransactionUI();
+            if (data.success) {
+                hasActiveTransaction = false;
+                updateTransactionUI();
+            }
         }
     })
     .catch(error => {
@@ -145,14 +175,23 @@ function rollbackTransaction() {
     fetch('api/query/rollback', {
         method: 'POST'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 401) {
+            alert('Session expired. Please login again.');
+            window.location.href = 'login.html';
+            return null;
+        }
+        return response.json();
+    })
     .then(data => {
-        setLoadingState(false);
-        displayResults(data);
+        if (data) {
+            setLoadingState(false);
+            displayResults(data);
 
-        if (data.success) {
-            hasActiveTransaction = false;
-            updateTransactionUI();
+            if (data.success) {
+                hasActiveTransaction = false;
+                updateTransactionUI();
+            }
         }
     })
     .catch(error => {
@@ -261,4 +300,63 @@ function clearQuery() {
 
     document.getElementById('queryInput').value = '';
     document.getElementById('aliasSelect').selectedIndex = 0;
+}
+
+/**
+ * Check if user is authenticated
+ */
+async function checkAuthentication() {
+    try {
+        const response = await fetch('api/auth/check');
+        const data = await response.json();
+
+        if (data.success && data.authenticated) {
+            currentUser = {
+                username: data.username,
+                displayName: data.displayName
+            };
+
+            // Show user info
+            document.getElementById('userDisplay').textContent = data.displayName;
+            document.getElementById('userInfo').style.display = 'block';
+
+            return true;
+        }
+
+        return false;
+
+    } catch (error) {
+        console.error('Authentication check error:', error);
+        return false;
+    }
+}
+
+/**
+ * Logout user
+ */
+async function logout() {
+    if (hasActiveTransaction) {
+        if (!confirm('You have an active transaction that will be rolled back. Continue with logout?')) {
+            return;
+        }
+    }
+
+    try {
+        const response = await fetch('api/auth/logout', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Redirect to login page
+            window.location.href = 'login.html';
+        } else {
+            alert('Logout failed: ' + data.message);
+        }
+
+    } catch (error) {
+        console.error('Logout error:', error);
+        alert('Error during logout');
+    }
 }
