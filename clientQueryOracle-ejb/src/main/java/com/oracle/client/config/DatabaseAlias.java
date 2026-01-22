@@ -6,15 +6,43 @@ package com.oracle.client.config;
  */
 public enum DatabaseAlias {
 
-    /**
-     * Enterprise ASP database
-     */
-    ENTR_ASP("entr_asp", "jdbc/nsd_entr"),
+    SESAMO("SESAMO", "jdbc/ds_sesamo"),
+    SIGN_DCM("SIGN_DCM", "jdbc/ws_signapp"),
+    EJBSCHED_ENTR("EJBSCHED_ENTR", "jdbc/DBTASK"),
+    MON_ASP("MON_ASP", "jdbc/ds_MONASP"),
+    
+    
+    ENTR_ASP("ENTR_ASP", "jdbc/nsd_entr"),
+    
+    FASC_EQUI("FASC_EQUI", "jdbc/gaiweb_equi"),  
+    FASC_AAMS("FASC_AAMS", "jdbc/gaiweb_aams"),  
+    FASC_ACN("FASC_ACN", "jdbc/gaiweb_acn"),  
+    FASC_ADER("FASC_ADER", "jdbc/gaiweb_ader"),  
+    FASC_CONSIP("xxx", "jdbc/gaiweb_consip"),  
+    /*
+    xxx("xxx", "jdbc/gaiweb_demanio"),  
+    xxx("xxx", "jdbc/gaiweb_entr"),  
+    xxx("xxx", "jdbc/gaiweb_sogei"),  
+    xxx("xxx", "jdbc/gta_equi"),  
+    xxx("xxx", "jdbc/gta_aams"),  
+    xxx("xxx", "jdbc/gta_ader"),  
+    xxx("xxx", "jdbc/gta_consip"),  
+    xxx("xxx", "jdbc/gta_demanio"),  
+    xxx("xxx", "jdbc/gta_entr"),  
+    xxx("xxx", "jdbc/gta_sogei"),  
+    xxx("xxx", "jdbc/nsd_equi"),  
+    xxx("xxx", "jdbc/nsd_aams"),  
+    xxx("xxx", "jdbc/nsd_ader"),  
+    xxx("xxx", "jdbc/nsd_consip"),  
+    xxx("xxx", "jdbc/nsd_demanio"), 
+    xxx("xxx", "jdbc/nsd_entr"),  
+    xxx("xxx", "jdbc/nsd_sogei"),  
+     
+    */
 
-    /**
-     * Sesamo database
-     */
-    SESAMO("sesamo", "jdbc/ds_sesamo");
+    xxx("xxx", "jdbc/xxx");
+    
+	
 
     private final String alias;
     private final String jndiName;

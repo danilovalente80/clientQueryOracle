@@ -41,7 +41,7 @@ CREATE TABLE sesamo.client_utenti (
 );
 
 -- Indici
-CREATE INDEX idx_client_utenti_username ON sesamo.client_utenti(username);
+--CREATE INDEX idx_client_utenti_username ON sesamo.client_utenti(username);
 CREATE INDEX idx_client_utenti_date ON sesamo.client_utenti(data_inizio, data_fine);
 
 -- Commenti
