@@ -22,7 +22,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -31,6 +33,7 @@ import java.util.logging.Logger;
  * Stateful EJB for executing Oracle queries with manual transaction management.
  * Uses Bean Managed Transactions (BMT) with UserTransaction to allow explicit commit/rollback control
  * across multiple method invocations.
+ * Supports executing queries on multiple databases (aliases) within the same transaction.
  */
 @Stateful
 @TransactionManagement(TransactionManagementType.BEAN)
@@ -44,8 +47,9 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     @EJB
     private QueryLogService queryLogService;
 
-    private Connection connection;
-    private String currentAlias;
+    // Support multiple connections for different databases in the same transaction
+    private Map<String, Connection> connections = new HashMap<String, Connection>();
+    private List<String> usedAliases = new ArrayList<String>();
     private int lastAffectedRows;
     private String sessionId;
     private UserTransaction userTransaction;
@@ -82,51 +86,6 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
                 );
             }
 
-            // Determine database alias: use provided alias or extract from query
-            String aliasToUse = null;
-
-            // First, check if alias was explicitly provided
-            if (request.getAlias() != null && !request.getAlias().trim().isEmpty()) {
-                aliasToUse = request.getAlias().trim();
-                LOGGER.info("Using provided alias: " + aliasToUse);
-            } else {
-                // Try to extract alias from query (e.g., from "UPDATE sesamo.uffici SET...")
-                String extractedAlias = QueryParser.extractAlias(query);
-                if (extractedAlias != null) {
-                    aliasToUse = extractedAlias;
-                    LOGGER.info("Extracted alias from query: " + aliasToUse + " - " +
-                        QueryParser.getAliasDetectionInfo(query));
-                } else {
-                    return QueryResponse.error(
-                        "Cannot determine database alias",
-                        "Please either:\n" +
-                        "1. Select a database from the dropdown, OR\n" +
-                        "2. Use schema-qualified table names in your query (e.g., sesamo.uffici)\n\n" +
-                        "Available aliases: " + DatabaseAlias.getAvailableAliases()
-                    );
-                }
-            }
-
-            // Get database alias and JNDI name
-            DatabaseAlias dbAlias;
-            try {
-                dbAlias = DatabaseAlias.fromAlias(aliasToUse);
-            } catch (IllegalArgumentException e) {
-                return QueryResponse.error("Invalid database alias: " + aliasToUse, e.getMessage());
-            }
-
-            // If alias changed or no connection, establish new connection
-            if (connection == null || currentAlias == null || !currentAlias.equals(aliasToUse)) {
-                // Close existing transaction and connection if changing database
-                if (transactionActive) {
-                    LOGGER.warning("Changing database alias - rolling back existing transaction");
-                    rollbackUserTransaction();
-                }
-                closeConnection();
-                connection = getConnection(dbAlias);
-                currentAlias = aliasToUse;
-            }
-
             // Begin UserTransaction if not already active
             if (!transactionActive) {
                 userTransaction = sessionContext.getUserTransaction();
@@ -147,20 +106,65 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             List<Integer> affectedRowsList = new ArrayList<Integer>();
             int totalAffectedRows = 0;
 
-            // Execute each query
+            // Execute each query - detect alias for each individual query
             for (int i = 0; i < queries.size(); i++) {
                 String singleQuery = queries.get(i);
                 PreparedStatement statement = null;
+
                 try {
+                    // Determine database alias for this specific query
+                    String aliasToUse = null;
+
+                    // First, check if alias was explicitly provided
+                    if (request.getAlias() != null && !request.getAlias().trim().isEmpty()) {
+                        aliasToUse = request.getAlias().trim();
+                        LOGGER.info("Using provided alias: " + aliasToUse);
+                    } else {
+                        // Try to extract alias from this specific query
+                        String extractedAlias = QueryParser.extractAlias(singleQuery);
+                        if (extractedAlias != null) {
+                            aliasToUse = extractedAlias;
+                            LOGGER.info("Extracted alias from query " + (i + 1) + ": " + aliasToUse);
+                        } else {
+                            // Rollback and return error
+                            if (transactionActive) {
+                                rollbackUserTransaction();
+                            }
+                            return QueryResponse.error(
+                                "Cannot determine database alias for query " + (i + 1),
+                                "Please either:\n" +
+                                "1. Select a database from the dropdown, OR\n" +
+                                "2. Use schema-qualified table names in your query (e.g., sesamo.uffici)\n\n" +
+                                "Available aliases: " + DatabaseAlias.getAvailableAliases()
+                            );
+                        }
+                    }
+
+                    // Get database alias and JNDI name
+                    DatabaseAlias dbAlias;
+                    try {
+                        dbAlias = DatabaseAlias.fromAlias(aliasToUse);
+                    } catch (IllegalArgumentException e) {
+                        // Rollback and return error
+                        if (transactionActive) {
+                            rollbackUserTransaction();
+                        }
+                        return QueryResponse.error("Invalid database alias: " + aliasToUse, e.getMessage());
+                    }
+
+                    // Get or create connection for this alias
+                    Connection conn = getOrCreateConnection(dbAlias);
+
                     LOGGER.info("Executing query " + (i + 1) + "/" + queries.size() + " on " +
                         dbAlias.getAlias() + ": " + singleQuery.substring(0, Math.min(100, singleQuery.length())));
 
-                    statement = connection.prepareStatement(singleQuery);
+                    statement = conn.prepareStatement(singleQuery);
                     int affected = statement.executeUpdate();
                     affectedRowsList.add(affected);
                     totalAffectedRows += affected;
 
-                    LOGGER.info("Query " + (i + 1) + " executed successfully. Affected rows: " + affected);
+                    LOGGER.info("Query " + (i + 1) + " executed successfully on " +
+                        dbAlias.getAlias() + ". Affected rows: " + affected);
 
                 } finally {
                     if (statement != null) {
@@ -186,9 +190,10 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             }
             String affectedRowsDetail = detailBuilder.toString();
 
-            // Log successful query execution
+            // Log successful query execution (use all aliases involved)
             if (queryLogService != null && currentUsername != null) {
-                queryLogService.logQuerySuccess(currentUsername, aliasToUse, query,
+                String aliasesUsed = usedAliases.isEmpty() ? "unknown" : String.join(",", usedAliases);
+                queryLogService.logQuerySuccess(currentUsername, aliasesUsed, query,
                     totalAffectedRows, duration, sessionId, request.getIpAddress());
             }
 
@@ -207,7 +212,8 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
             // Log error
             if (queryLogService != null && request.getUsername() != null) {
-                queryLogService.logQueryError(request.getUsername(), currentAlias,
+                String aliasesUsed = usedAliases.isEmpty() ? "unknown" : String.join(",", usedAliases);
+                queryLogService.logQueryError(request.getUsername(), aliasesUsed,
                     request.getQuery(), e.getMessage(),
                     "SQLState:" + e.getSQLState() + " Code:" + e.getErrorCode(),
                     0, sessionId, request.getIpAddress());
@@ -226,7 +232,8 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
             // Log error
             if (queryLogService != null && request.getUsername() != null) {
-                queryLogService.logQueryError(request.getUsername(), currentAlias,
+                String aliasesUsed = usedAliases.isEmpty() ? "unknown" : String.join(",", usedAliases);
+                queryLogService.logQueryError(request.getUsername(), aliasesUsed,
                     request.getQuery(), e.getMessage(), e.getClass().getName(),
                     0, sessionId, request.getIpAddress());
             }
@@ -251,16 +258,22 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
         try {
             userTransaction.commit();
             transactionActive = false;
-            LOGGER.info("UserTransaction committed successfully. Rows affected: " + lastAffectedRows);
+            String aliasesInfo = usedAliases.isEmpty() ? "unknown" : String.join(",", usedAliases);
+            LOGGER.info("UserTransaction committed successfully on databases: " + aliasesInfo +
+                ". Rows affected: " + lastAffectedRows);
 
             // Log commit
             if (queryLogService != null && currentUsername != null) {
-                queryLogService.logCommit(currentUsername, currentAlias, lastAffectedRows, sessionId);
+                queryLogService.logCommit(currentUsername, aliasesInfo, lastAffectedRows, sessionId);
             }
+
+            // Close all connections after successful commit
+            closeAllConnections();
 
             return QueryResponse.success(
                 lastAffectedRows,
-                "Transaction committed successfully. " + lastAffectedRows + " row(s) affected."
+                "Transaction committed successfully on database(s): " + aliasesInfo +
+                ". " + lastAffectedRows + " row(s) affected."
             );
 
         } catch (Exception e) {
@@ -282,16 +295,21 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
 
         try {
             rollbackUserTransaction();
-            LOGGER.info("UserTransaction rolled back successfully");
+            String aliasesInfo = usedAliases.isEmpty() ? "unknown" : String.join(",", usedAliases);
+            LOGGER.info("UserTransaction rolled back successfully on databases: " + aliasesInfo);
 
             // Log rollback
             if (queryLogService != null && currentUsername != null) {
-                queryLogService.logRollback(currentUsername, currentAlias, sessionId);
+                queryLogService.logRollback(currentUsername, aliasesInfo, sessionId);
             }
+
+            // Close all connections after rollback
+            closeAllConnections();
 
             return QueryResponse.success(
                 0,
-                "Transaction rolled back successfully. Changes have been discarded."
+                "Transaction rolled back successfully on database(s): " + aliasesInfo +
+                ". Changes have been discarded."
             );
 
         } catch (Exception e) {
@@ -314,16 +332,38 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     }
 
     /**
-     * Get database connection via JNDI lookup.
+     * Get or create connection for the specified database alias.
+     * All connections are automatically enlisted in the current UserTransaction.
      */
-    private Connection getConnection(DatabaseAlias dbAlias) throws Exception {
-        LOGGER.info("Looking up datasource: " + dbAlias.getJndiName());
+    private Connection getOrCreateConnection(DatabaseAlias dbAlias) throws Exception {
+        String alias = dbAlias.getAlias();
 
+        // Check if connection already exists for this alias
+        if (connections.containsKey(alias)) {
+            Connection existingConn = connections.get(alias);
+            // Verify connection is still valid
+            if (existingConn != null && !existingConn.isClosed()) {
+                LOGGER.info("Reusing existing connection for alias: " + alias);
+                return existingConn;
+            } else {
+                // Connection is closed, remove it
+                connections.remove(alias);
+            }
+        }
+
+        // Create new connection
+        LOGGER.info("Looking up datasource: " + dbAlias.getJndiName());
         Context ctx = new InitialContext();
         DataSource ds = (DataSource) ctx.lookup(dbAlias.getJndiName());
 
         Connection conn = ds.getConnection();
-        LOGGER.info("Connection established for alias: " + dbAlias.getAlias());
+        LOGGER.info("New connection established for alias: " + alias);
+
+        // Store connection and track alias usage
+        connections.put(alias, conn);
+        if (!usedAliases.contains(alias)) {
+            usedAliases.add(alias);
+        }
 
         return conn;
     }
@@ -344,19 +384,23 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
     }
 
     /**
-     * Close the current connection.
+     * Close all database connections.
      */
-    private void closeConnection() {
-        if (connection != null) {
-            try {
-                connection.close();
-                LOGGER.info("Connection closed");
-            } catch (SQLException e) {
-                LOGGER.log(Level.WARNING, "Error closing connection", e);
+    private void closeAllConnections() {
+        for (Map.Entry<String, Connection> entry : connections.entrySet()) {
+            String alias = entry.getKey();
+            Connection conn = entry.getValue();
+            if (conn != null) {
+                try {
+                    conn.close();
+                    LOGGER.info("Connection closed for alias: " + alias);
+                } catch (SQLException e) {
+                    LOGGER.log(Level.WARNING, "Error closing connection for alias: " + alias, e);
+                }
             }
-            connection = null;
-            currentAlias = null;
         }
+        connections.clear();
+        usedAliases.clear();
     }
 
     @PreDestroy
@@ -369,6 +413,6 @@ public class QueryExecutorServiceBean implements QueryExecutorService {
             rollbackUserTransaction();
         }
 
-        closeConnection();
+        closeAllConnections();
     }
 }
